@@ -1,0 +1,40 @@
+---
+- name: restart apache
+  service:
+    name: httpd
+    state: restarted
+  when:
+    - ansible_facts.services['httpd.service'] is defined
+    - ansible_facts.services['httpd.service'].status == 'enabled'
+
+- name: restart engine
+  service:
+    name: ovirt-engine
+    state: restarted
+  when:
+    - ansible_facts.services['ovirt-engine.service'] is defined
+    - ansible_facts.services['ovirt-engine.service'].status == 'enabled'
+
+- name: restart ovn provider
+  service:
+    name: ovirt-provider-ovn
+    state: restarted
+  when:
+    - ansible_facts.services['ovirt-provider-ovn.service'] is defined
+    - ansible_facts.services['ovirt-provider-ovn.service'].status == 'enabled'
+
+- name: restart websocket proxy
+  service:
+    name: ovirt-websocket-proxy
+    state: restarted
+  when:
+    - ansible_facts.services['ovirt-websocket-proxy.service'] is defined
+    - ansible_facts.services['ovirt-websocket-proxy.service'].status == 'enabled'
+
+- name: restart imageio proxy
+  service:
+    name: ovirt-imageio-proxy
+    state: restarted
+  when:
+    - ansible_facts.services['ovirt-imageio-proxy.service'] is defined
+    - ansible_facts.services['ovirt-imageio-proxy.service'].status == 'enabled'

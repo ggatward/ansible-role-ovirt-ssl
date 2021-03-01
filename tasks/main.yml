@@ -1,0 +1,183 @@
+---
+- name: httpd mod_ssl - get package list
+  package_facts:
+  when: ansible_facts.packages is not defined
+
+- name: httpd mod_ssl - do we have ssl.conf.rpmnew?
+  stat:
+    path: "{{ ssl_conf_rpmnew }}"
+  register: stat_ssl_conf_rpmnew
+
+- name: httpd mod_ssl - configure chain file
+  set_fact:
+    ssl_conf: "{{ ssl_conf | union(ssl_conf_chain) }}"
+  when: httpd_cert_chain_file is defined or ('crypto-policies' not in
+          ansible_facts.packages)
+
+- name: httpd ≥ 2.4.8 mod_ssl - comment out chain file
+  set_fact:
+    ssl_conf: "{{ ssl_conf | union(ssl_conf_chainless) }}"
+  when:
+    - (ansible_facts.packages.mod_ssl | last).version is version('2.4.8', '>=')
+    - httpd_cert_chain_file is not defined
+
+- name: add protocol to required changes
+  set_fact:
+    ssl_conf: "{{ ssl_conf | union(ssl_conf_protocol) }}"
+  when: httpd_ssl_protocol is defined or ('crypto-policies'
+          not in ansible_facts.packages)
+
+- name: do we need changes to configuration in ssl.conf?
+  lineinfile:
+    path: "/etc/httpd/conf.d/ssl.conf"
+    regexp: "{{ item.r }}"
+    line: "{{ item.l }}"
+  loop: "{{ ssl_conf }}"
+  check_mode: true
+  register: need_update_ssl_conf
+
+- name: add warning banner
+  blockinfile:
+    path: "/etc/httpd/conf.d/ssl.conf"
+    insertbefore: BOF
+    marker: '# {mark} WARNING'
+    block: |
+      #
+      #
+      # WHOLE FILE IS UNDER ANSIBLE CONTROL. MANUAL CHANGES WILL BE OVERRRIDEN!
+      #
+      #
+
+- name: httpd mod_ssl - update apache config
+  block:
+    - name: back up current ssl.conf
+      command: mv /etc/httpd/conf.d/ssl.conf {{ ssl_conf_backup }}
+
+    - name: copy backup as ssl.conf
+      copy:
+        remote_src: true
+        src: "{{ ssl_conf_backup }}"
+        dest: /etc/httpd/conf.d/ssl.conf
+      when: not stat_ssl_conf_rpmnew.stat.exists
+
+    - name: get new default ssl.conf
+      command: mv {{ ssl_conf_rpmnew }} /etc/httpd/conf.d/ssl.conf
+      when: stat_ssl_conf_rpmnew.stat.exists
+
+    - name: modify ssl.conf
+      lineinfile:
+        path: /etc/httpd/conf.d/ssl.conf
+        backup: false
+        regexp: "{{ item.r }}"
+        line: "{{ item.l }}"
+      loop: "{{ ssl_conf }}"
+      notify:
+        - restart apache
+        - restart ovn provider
+
+    - name: ssl.conf - set TLS protocols
+      lineinfile:
+        path: "/etc/httpd/conf.d/ssl.conf"
+        backup: false
+        regexp: "^SSLProtocol"
+        line: "{{ apache_ssl_protocol }}"
+      notify:
+        - restart apache
+        - restart ovn provider
+      when: "'crypto-policies' not in ansible_facts.packages"
+
+    - name: verify apache configuration
+      command: apachectl configtest
+  rescue:
+    - name: revert ssl.conf
+      command: mv {{ ssl_conf_backup }} /etc/httpd/conf.d/ssl.conf
+  when: stat_ssl_conf_rpmnew.stat.exists or need_update_ssl_conf.changed
+
+- name: ensure we have required directories
+  file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ httpd_ca_keystore_path | dirname if
+        httpd_ca_cert is defined else '' }}"
+    - "/etc/ovirt-engine/engine.conf.d"
+    - "/etc/ovirt-engine/ovirt-websocket-proxy.conf.d"
+  when: item | length > 0
+
+- name: create keystore for engine
+  block:
+    - debug:
+        msg: "{{ httpd_ca_cert }}"
+
+    - name: get first certificate if we got chain
+      set_fact:
+        httpd_ca_cert: "{{ httpd_ca_cert.split(delim, 1)[0] + delim }}"
+      vars:
+        delim: '-----END CERTIFICATE-----'
+
+    - name: cretate temporary httpd CA file
+      tempfile:
+        state: file
+      register: httpd_ca_file
+      changed_when: false
+
+    - name: add CA cert to httpd CA file
+      copy:
+        dest: "{{ httpd_ca_file.path }}"
+        content: "{{ httpd_ca_cert }}"
+      changed_when: false
+
+    - name: add CA cert to httpd CA file
+      copy:
+        dest: "/tmp/tmpca.pem"
+        content: "{{ httpd_ca_cert }}"
+      changed_when: false
+
+    - name: create java keystore for external ca
+      java_cert:
+        keystore_create: true
+        keystore_path: "{{ httpd_ca_keystore_path }}"
+        keystore_pass: "{{ httpd_ca_keystore_password }}"
+        cert_alias: httpd CA
+        cert_path: "{{ httpd_ca_file.path }}"
+      notify: restart engine
+
+    - name: let engine know of the keystore
+      template:
+        src: engine.conf.d_truststore.j2
+        dest: /etc/ovirt-engine/engine.conf.d/99-custom-truststore.conf
+      notify: restart engine
+  always:
+    - name: remove temporary httpd CA file
+      file:
+        path: "{{ httpd_ca_file.path }}"
+        state: absent
+      changed_when: false
+  when: httpd_ca_cert is defined
+
+- name: configure websockets proxy
+  template:
+    src: ws_ssl.j2
+    dest: "/etc/ovirt-engine/ovirt-websocket-proxy.conf.d/99-ssl.conf"
+  notify: restart websocket proxy
+
+- name: does imageio configuration file exist?
+  stat:
+    path: /etc/ovirt-imageio-proxy/ovirt-imageio-proxy.conf
+  register: oio_config
+
+- name: configure imagio proxy
+  lineinfile:
+    path: /etc/ovirt-imageio-proxy/ovirt-imageio-proxy.conf
+    regexp: "{{ item.r }}"
+    line: "{{ item.l }}"
+  loop:
+    - r: '^#?ssl_key_file = '
+      l: ssl_key_file = {{ httpd_key_file }}
+    - r: '^#?ssl_cert_file = '
+      l: ssl_cert_file = {{ httpd_cert_file }}
+  when: oio_config.stat.exists
+  notify: restart imageio proxy
+
+- name: get current services state (handlers need it)
+  service_facts:

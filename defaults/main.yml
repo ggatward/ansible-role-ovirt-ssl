@@ -1,0 +1,22 @@
+---
+apache_ssl_protocol: SSLProtocol all -SSLv2 -SSLv3 -TLSv1 -TLSv1.1
+ssl_conf_backup: /etc/httpd/conf.d/mod_ssl.conf.{{
+        ansible_date_time.iso8601_basic_short | replace('T', '-') }}
+ssl_conf_rpmnew: /etc/httpd/conf.d/ssl.conf.rpmnew
+system_keystore: /etc/pki/ca-trust/extracted/java/cacerts
+httpd_ca_keystore_path: /etc/pki/ovirt-engine/external_ca.jks
+httpd_ca_keystore_password: changeit
+ssl_conf:
+  - r: '^#?SSLCertificateFile'
+    l: SSLCertificateFile {{ httpd_cert_file }}
+  - r: '^#?SSLCertificateKeyFile'
+    l: SSLCertificateKeyFile {{ httpd_key_file }}
+ssl_conf_chain:
+  - r: '^#?SSLCertificateChainFile'
+    l: SSLCertificateChainFile {{ httpd_cert_chain_file }}
+ssl_conf_chainless:
+  - r: '^#?SSLCertificateChainFile(.*)$'
+    l: '#SSLCertificateChainFile\1'
+ssl_conf_protocol:
+  - r: "^#?SSLProtocol"
+    l: "{{ httpd_ssl_protocol | default(apache_ssl_protocol) }}"

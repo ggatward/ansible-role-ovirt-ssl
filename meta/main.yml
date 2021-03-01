@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  author: David Jaša
+  description: Configure externally-issued TLS certificate for oVirt Engine
+  company: Red Hat, Inc.
+  license: Apache 2.0
+  min_ansible_version: 2.9
+  galaxy_tags:
+    - ovirt
+    - rhv
+    - rhev
+    - aaa
