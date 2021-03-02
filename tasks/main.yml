@@ -125,12 +125,18 @@
       copy:
         dest: "{{ httpd_ca_file.path }}"
         content: "{{ httpd_ca_cert }}"
+        owner: root
+        group: root
+        mode: '0644'
       changed_when: false
 
     - name: add CA cert to httpd CA file
       copy:
         dest: "/tmp/tmpca.pem"
         content: "{{ httpd_ca_cert }}"
+        owner: root
+        group: root
+        mode: '0644'
       changed_when: false
 
     - name: create java keystore for external ca
@@ -146,6 +152,9 @@
       template:
         src: engine.conf.d_truststore.j2
         dest: /etc/ovirt-engine/engine.conf.d/99-custom-truststore.conf
+        owner: root
+        group: root
+        mode: '0644'
       notify: restart engine
   always:
     - name: remove temporary httpd CA file
@@ -159,6 +168,9 @@
   template:
     src: ws_ssl.j2
     dest: "/etc/ovirt-engine/ovirt-websocket-proxy.conf.d/99-ssl.conf"
+    owner: root
+    group: root
+    mode: '0644'
   notify: restart websocket proxy
 
 - name: does imageio configuration file exist?
