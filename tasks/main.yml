@@ -106,8 +106,8 @@
 
 - name: create keystore for engine
   block:
-    - debug:
-        msg: "{{ httpd_ca_cert }}"
+    # - debug:
+    #     msg: "{{ httpd_ca_cert }}"
 
     - name: get first certificate if we got chain
       set_fact:
