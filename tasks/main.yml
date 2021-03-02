@@ -148,6 +148,13 @@
         cert_path: "{{ httpd_ca_file.path }}"
       notify: restart engine
 
+    - name: Set permissions on JKS
+      file:
+        path: "{{ httpd_ca_keystore_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: let engine know of the keystore
       template:
         src: engine.conf.d_truststore.j2
